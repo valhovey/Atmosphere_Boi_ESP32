@@ -24,9 +24,11 @@
 const char* ssid = "CHANGEME";
 const char* password = "CHANGEME";
 
-const char* mqtt_server = "192.168.100.42";
+const char* mqtt_server = "CHANGEME";
 const char* mqtt_client_id = "Atmosphere_Boi_V6";
 const char* mqtt_state_topic = "home/sensor/atmosphereBoiV6/value";
+const char* mqtt_user = "CHANGEME";
+const char* mqtt_password = "CHANGEME";
 
 float avgCount = 0;
 
@@ -63,26 +65,42 @@ Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, OLED_RESET);
 SensirionI2CSen5x sen5x;
 Adafruit_SCD30  scd30;
 
+unsigned long previousMillis = 0;
+unsigned long interval = 30000;
+
 class MqttLiason {
   private:
     const char* clientId;
     const char* server;
+    const char* userName;
+    const char* password;
 
   public:
     PubSubClient client;
 
-    MqttLiason(PubSubClient& client, const char* clientId, const char* server) : client(client), clientId(clientId), server(server) {};
+    MqttLiason(
+      PubSubClient& client,
+      const char* clientId,
+      const char* server,
+      const char* userName,
+      const char* password
+    ) : client(client), clientId(clientId), server(server), userName(userName), password(password) {};
 
     bool connect() {
       this->client.setServer(this->server, 1883);
 
-      return this->client.connect(this->clientId);
+      return this->client.connect(this->clientId, this->userName, this->password);
     }
 
     bool ready() {
       return this->client.connected();
     }
-} liason(client, mqtt_client_id, mqtt_server);
+
+    bool reconnect() {
+      this->client.disconnect();
+      this->connect();
+    }
+} liason(client, mqtt_client_id, mqtt_server, mqtt_user, mqtt_password);
 
 void initDisplay() {
   Serial.println("Starting Display");
@@ -333,5 +351,21 @@ void loop() {
 
   if (liason.ready()) {
     liason.client.loop();
+  }
+
+  unsigned long currentMillis = millis();
+  const bool checkIntervalReached = (currentMillis - previousMillis) >= interval;
+
+  if ((WiFi.status() != WL_CONNECTED) && checkIntervalReached) {
+    WiFi.reconnect();
+    Serial.print(millis());
+    Serial.println("Reconnecting to WiFi...");
+    WiFi.disconnect();
+    WiFi.reconnect();
+    previousMillis = currentMillis;
+  }
+
+  if (!liason.ready() && checkIntervalReached) {
+    liason.reconnect();
   }
 }
